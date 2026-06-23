@@ -1,0 +1,11 @@
+{
+ "telegram_token": "여기에_봇토큰_붙여넣기",
+ "poll_interval_sec": 120,
+ "summary_interval_sec": 21600,
+ "update_repo": "PangJuck/moana-imax-alarm",
+ "theaters": {
+  "0013": "용산아이파크몰",
+  "0074": "왕십리",
+  "0199": "천호"
+ }
+}
