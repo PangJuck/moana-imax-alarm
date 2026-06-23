@@ -8,6 +8,7 @@ CGV IMAX 예매 오픈 텔레그램 알리미
   python cgv_imax_alarm.py check    # 1회 점검(현재 열린 IMAX 출력, 텔레그램 미사용)
 """
 import os, sys, time, json, hmac, hashlib, base64, traceback
+from datetime import datetime, timedelta
 from urllib.parse import urlsplit, urlencode
 import requests
 
@@ -20,7 +21,7 @@ TARGETS_PATH = os.path.join(BASE, "targets.json")
 SUBS_PATH = os.path.join(BASE, "subscribers.json")
 STATE_PATH = os.path.join(BASE, "state.json")
 
-VERSION = "v2.3"
+VERSION = "v2.4"
 API = "https://api.cgv.co.kr"
 SECRET = b"ydqXY0ocnFLmJGHr_zNzFcpjwAsXq_8JcBNURAkRscg"
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
@@ -524,54 +525,69 @@ def fmt_showtimes(showtimes):
         lines.append(f"· {md} " + ", ".join(times))
     return "\n".join(lines)
 
-def fmt_date_range(dates):
-    """[ymd, ...] → '06/23~06/25' 또는 '06/23' 형식."""
-    if not dates:
-        return ""
-    fmt = lambda y: f"{y[4:6]}/{y[6:8]}" if len(y) == 8 else y
-    if len(dates) == 1:
-        return fmt(dates[0])
-    return f"{fmt(dates[0])}~{fmt(dates[-1])}"
+_DOW = ["월", "화", "수", "목", "금", "토", "일"]
 
-def fmt_md(ymd):
-    """'20260623' → '06/23'."""
-    return f"{ymd[4:6]}/{ymd[6:8]}" if len(ymd) == 8 else ymd
+def fmt_dates_grouped(dates):
+    """[ymd, ...] → 연속 구간은 'mm/dd~mm/dd', 단일은 'mm/dd', 띄엄띄엄이면 공백으로 구분.
+    월 경계도 실제 날짜로 판정(06/30→07/01 연속). 예) ['…0623','…0624','…0625','…0628'] → '06/23~06/25 06/28'"""
+    ds = sorted({d for d in dates if d and len(d) == 8})
+    if not ds:
+        return ""
+    parsed = [datetime.strptime(d, "%Y%m%d") for d in ds]
+    groups, start, end = [], parsed[0], parsed[0]
+    for dt in parsed[1:]:
+        if dt - end == timedelta(days=1):
+            end = dt
+        else:
+            groups.append((start, end)); start = end = dt
+    groups.append((start, end))
+    md = lambda dt: f"{dt.month:02d}/{dt.day:02d}"
+    return " ".join(md(a) if a == b else f"{md(a)}~{md(b)}" for a, b in groups)
+
+def fmt_md_dow(ymd):
+    """'20260623' → '06/23(월)'."""
+    if not ymd or len(ymd) != 8:
+        return ymd
+    return f"{ymd[4:6]}/{ymd[6:8]}({_DOW[datetime.strptime(ymd, '%Y%m%d').weekday()]})"
 
 def build_summary(theaters):
-    """6시간 자동 요약: 극장·영화별 정확한 상영 날짜만 나열(범위 아님). 회차 시간 제외 → 가벼움."""
+    """6시간 자동 요약: 극장 구분선 + 영화별 상영 날짜(연속구간은 묶고 띄엄띄엄은 분리). 회차 시간 제외 → 가벼움."""
     lines = ["세상은 wz를 중심으로 돌아갑니다", "",
              f"🎬 현재 IMAX 상영작 ({time.strftime('%m-%d %H:%M')})"]
     for site_no, site_nm in theaters.items():
         schedule = site_imax_schedule(site_no)
+        lines.append("")
+        lines.append(f"━━━ 📍 {site_nm} ━━━")
         if schedule is None:
-            lines.append(f"[{site_nm}] (조회 실패)")
+            lines.append(" (조회 실패)")
         elif schedule:
-            lines.append(f"[{site_nm}]")
             for m in sorted(schedule, key=lambda x: x["movNm"]):
-                ds = ", ".join(fmt_md(y) for y in m["dates"])
-                lines.append(f"  · {m['movNm']}  {ds}" if ds else f"  · {m['movNm']}")
+                ds = fmt_dates_grouped(m["dates"])
+                lines.append(f" · {m['movNm']}")
+                if ds:
+                    lines.append(f"   {ds}")
         else:
-            lines.append(f"[{site_nm}] 없음")
+            lines.append(" 없음")
     return "\n".join(lines)
 
 def build_detail(theaters):
-    """전체 상세(벽글): 극장·영화별 날짜 + 그 날의 모든 회차 시간. /status 후속 메시지용."""
-    lines = [f"🎬 현재 IMAX 상영작 — 회차 전체 ({time.strftime('%m-%d %H:%M')})"]
+    """전체 상세(벽글): 극장 구분선 + 영화별 날짜(요일 포함) + 그 날의 모든 회차 시간. /status 후속 메시지용."""
+    lines = [f"🎬 IMAX 상영작 — 회차 전체 ({time.strftime('%m-%d %H:%M')})"]
     for site_no, site_nm in theaters.items():
         schedule = site_imax_schedule(site_no)
+        lines.append("")
+        lines.append(f"━━━ 📍 {site_nm} ━━━")
         if schedule is None:
-            lines.append(f"[{site_nm}] (조회 실패)")
+            lines.append(" (조회 실패)")
         elif schedule:
-            lines.append(f"[{site_nm}]")
             for m in sorted(schedule, key=lambda x: x["movNm"]):
-                dr = fmt_date_range(m["dates"])
-                lines.append(f"  · {m['movNm']}  {dr}" if dr else f"  · {m['movNm']}")
+                lines.append(f"▸ {m['movNm']}")
                 for ymd in m["dates"]:
                     times = m["showtimes"].get(ymd, [])
                     if times:
-                        lines.append(f"      {fmt_md(ymd)}  " + ", ".join(times))
+                        lines.append(f"   {fmt_md_dow(ymd)}  " + ", ".join(times))
         else:
-            lines.append(f"[{site_nm}] 없음")
+            lines.append(" 없음")
     return "\n".join(lines)
 
 # ---------- 메인 ----------
