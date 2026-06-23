@@ -267,12 +267,19 @@ class App:
         self.log(f"업데이트 다운로드 중: {ver}...")
         try:
             core.apply_update(url)
-            self.log(f"업데이트 완료 ({ver}). 창을 닫고 다시 열어주세요.")
-            self.root.after(0, lambda: messagebox.showinfo(
-                "업데이트 완료", f"{ver} 설치 완료!\n창을 닫고 다시 열면 새 버전이 실행됩니다."))
         except Exception as e:
             self.log(f"업데이트 실패: {e}")
             self.root.after(0, lambda: messagebox.showerror("업데이트 실패", str(e)))
+            return
+        self.log(f"다운로드 완료 ({ver}). 앱을 닫고 새 버전으로 자동 재실행합니다.")
+        self.root.after(0, lambda: self._finish_update(ver))
+
+    def _finish_update(self, ver):
+        messagebox.showinfo(
+            "업데이트 준비 완료",
+            f"{ver} 다운로드 완료!\n\n[확인]을 누르면 앱이 닫히고\n잠시 후 새 버전이 자동으로 실행됩니다.\n(자동으로 안 열리면 직접 다시 열어주세요.)")
+        self.stop_flag.set()
+        os._exit(0)  # 프로세스를 완전히 종료해야 도우미 배치가 exe를 교체할 수 있다
 
     def _autostart(self):
         """토큰이 저장돼 있으면 실행 직후 자동으로 감시 시작(부팅 자동시작 대비)."""

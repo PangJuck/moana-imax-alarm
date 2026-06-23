@@ -21,7 +21,7 @@ TARGETS_PATH = os.path.join(BASE, "targets.json")
 SUBS_PATH = os.path.join(BASE, "subscribers.json")
 STATE_PATH = os.path.join(BASE, "state.json")
 
-VERSION = "v2.5"
+VERSION = "v2.6"
 API = "https://api.cgv.co.kr"
 SECRET = b"ydqXY0ocnFLmJGHr_zNzFcpjwAsXq_8JcBNURAkRscg"
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
@@ -151,39 +151,50 @@ def fetch_update(config):
     raise RuntimeError(f"릴리즈 {latest}에 moana_alarm.exe 파일 없음")
 
 def cleanup_old_update():
-    """이전 업데이트가 남긴 .bak(직전 버전 exe)을 정리.
-    실행 중인 exe는 삭제 불가하므로, 다음 실행 때(=직전 버전이 더 이상 안 돌 때) 지운다.
-    아직 잠겨 있으면 조용히 넘어가고 다음 기회에 다시 시도."""
+    """이전 업데이트가 남긴 잔여 파일(.bak 구버전, 도우미 배치)을 시작 시 완전히 제거.
+    실행 중이 아닐 때 호출되므로 삭제가 가능하다."""
     if not getattr(sys, "frozen", False):
         return
-    bak = sys.executable + ".bak"
-    if os.path.exists(bak):
-        try:
-            os.remove(bak)
-        except OSError:
-            pass
+    d = os.path.dirname(sys.executable)
+    for p in (sys.executable + ".bak", os.path.join(d, "_update.bat")):
+        if os.path.exists(p):
+            try:
+                os.remove(p)
+            except OSError:
+                pass
 
 def apply_update(url):
-    """새 exe 다운로드 후 현재 exe 교체.
-    윈도우는 '실행 중인 exe'를 이름변경은 허용하지만 삭제는 막는다.
-    그래서 현재 exe를 .bak으로 옮기고 새 exe를 제자리에 둔 뒤,
-    .bak 삭제는 다음 실행 시(cleanup_old_update)로 미룬다."""
-    current = sys.executable
-    tmp = current + ".new"
-    bak = current + ".bak"
+    """새 exe를 '.new'로 내려받고, 도우미 배치가 (앱 종료 후) 교체·재실행하도록 예약.
+    실행 중인 exe를 직접 건드리지 않으므로 '액세스 거부'가 발생하지 않는다.
+    호출 측은 이 함수 반환 후 프로세스를 종료해야 배치가 교체를 진행한다."""
+    exe = sys.executable
+    new = exe + ".new"
     resp = requests.get(url, stream=True, timeout=300)
     resp.raise_for_status()
-    with open(tmp, "wb") as f:
+    with open(new, "wb") as f:
         for chunk in resp.iter_content(65536):
             f.write(chunk)
-    if os.path.exists(bak):
-        try:
-            os.remove(bak)  # 이전 .bak이 더 이상 안 돌면 여기서 정리됨
-        except OSError:
-            pass
-    os.rename(current, bak)  # 실행 중에도 이름변경은 허용됨
-    os.rename(tmp, current)
-    # .bak(지금 돌고 있는 구버전)은 삭제하지 않음 — 재시작 후 cleanup_old_update가 정리
+    d, name = os.path.dirname(exe), os.path.basename(exe)
+    bat = os.path.join(d, "_update.bat")
+    # 앱이 완전히 종료될 때까지 기다렸다가(=exe 잠금 해제) 교체하고 새 버전을 실행
+    script = (
+        "@echo off\r\n"
+        f'cd /d "{d}"\r\n'
+        ":wait\r\n"
+        "ping -n 2 127.0.0.1 >nul\r\n"
+        f'tasklist /fi "imagename eq {name}" 2>nul | find /i "{name}" >nul\r\n'
+        "if not errorlevel 1 goto wait\r\n"
+        "ping -n 2 127.0.0.1 >nul\r\n"
+        f'move /y "{name}.new" "{name}" >nul\r\n'
+        f'if exist "{name}.bak" del /f /q "{name}.bak" >nul\r\n'
+        f'start "" "{name}"\r\n'
+        'del /f /q "%~f0"\r\n'
+    )
+    with open(bat, "w", encoding="cp949") as f:
+        f.write(script)
+    import subprocess
+    # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP — 부모(앱)가 꺼져도 배치는 계속 실행
+    subprocess.Popen(["cmd", "/c", bat], creationflags=0x00000208, close_fds=True)
 
 def broadcast(token, subs, text):
     dead = []
@@ -262,7 +273,9 @@ def handle_update(token, upd, subs, targets):
                         text=f"⬇️ {ver} 다운로드 중... (잠시 기다려주세요)")
                 apply_update(url)
                 tg_call(token, "sendMessage", chat_id=cid,
-                        text=f"✅ {ver} 업데이트 완료!\n창을 닫고 다시 열면 새 버전이 실행됩니다.")
+                        text=f"✅ {ver} 다운로드 완료!\n새 버전 적용을 위해 봇을 재시작합니다. 잠시 후 자동으로 돌아옵니다.")
+                time.sleep(1)  # 메시지 전송 보장 후 종료 → 도우미 배치가 교체·재실행
+                os._exit(0)
         except Exception as e:
             tg_call(token, "sendMessage", chat_id=cid, text=f"❌ 업데이트 실패: {e}")
     elif cmd == "/status":
