@@ -21,7 +21,7 @@ TARGETS_PATH = os.path.join(BASE, "targets.json")
 SUBS_PATH = os.path.join(BASE, "subscribers.json")
 STATE_PATH = os.path.join(BASE, "state.json")
 
-VERSION = "v2.4"
+VERSION = "v2.5"
 API = "https://api.cgv.co.kr"
 SECRET = b"ydqXY0ocnFLmJGHr_zNzFcpjwAsXq_8JcBNURAkRscg"
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
@@ -150,21 +150,40 @@ def fetch_update(config):
             return latest, asset["browser_download_url"]
     raise RuntimeError(f"릴리즈 {latest}에 moana_alarm.exe 파일 없음")
 
+def cleanup_old_update():
+    """이전 업데이트가 남긴 .bak(직전 버전 exe)을 정리.
+    실행 중인 exe는 삭제 불가하므로, 다음 실행 때(=직전 버전이 더 이상 안 돌 때) 지운다.
+    아직 잠겨 있으면 조용히 넘어가고 다음 기회에 다시 시도."""
+    if not getattr(sys, "frozen", False):
+        return
+    bak = sys.executable + ".bak"
+    if os.path.exists(bak):
+        try:
+            os.remove(bak)
+        except OSError:
+            pass
+
 def apply_update(url):
-    """새 exe 다운로드 후 현재 exe 교체(PyInstaller onefile은 실행 중 덮어쓰기 가능)."""
+    """새 exe 다운로드 후 현재 exe 교체.
+    윈도우는 '실행 중인 exe'를 이름변경은 허용하지만 삭제는 막는다.
+    그래서 현재 exe를 .bak으로 옮기고 새 exe를 제자리에 둔 뒤,
+    .bak 삭제는 다음 실행 시(cleanup_old_update)로 미룬다."""
     current = sys.executable
     tmp = current + ".new"
+    bak = current + ".bak"
     resp = requests.get(url, stream=True, timeout=300)
     resp.raise_for_status()
     with open(tmp, "wb") as f:
         for chunk in resp.iter_content(65536):
             f.write(chunk)
-    bak = current + ".bak"
     if os.path.exists(bak):
-        os.remove(bak)
-    os.rename(current, bak)
+        try:
+            os.remove(bak)  # 이전 .bak이 더 이상 안 돌면 여기서 정리됨
+        except OSError:
+            pass
+    os.rename(current, bak)  # 실행 중에도 이름변경은 허용됨
     os.rename(tmp, current)
-    os.remove(bak)
+    # .bak(지금 돌고 있는 구버전)은 삭제하지 않음 — 재시작 후 cleanup_old_update가 정리
 
 def broadcast(token, subs, text):
     dead = []
@@ -279,7 +298,7 @@ def handle_update(token, upd, subs, targets):
         else:
             la_txt = "(이번 세션 동안 없음)"
         lines = [
-            "🟢 <b>정상 작동 중</b>",
+            f"🟢 <b>정상 작동 중</b> ({VERSION})",
             f"· 가동: {up_txt}",
             f"· 마지막 점검: {lp_txt}",
             f"· 마지막 자동 발송: {ls_txt}",
@@ -320,7 +339,7 @@ def handle_update(token, upd, subs, targets):
         else:
             la_txt = "(이번 세션 동안 없음)"
         report = (
-            "🧪 <b>점검 결과</b>\n"
+            f"🧪 <b>점검 결과</b> ({VERSION})\n"
             f"· CGV 연결: {'정상 ✅' if cgv_ok else '실패 ⚠'}\n"
             "· 텔레그램: 정상 ✅ (이 메시지가 증거)\n"
             f"· 구독자: {len(subs)}명\n"
@@ -617,6 +636,7 @@ def cmd_check():
             print(f"  '{title}' → {mv['movNm']}({mv['movNo']}): IMAX 열린 극장 = {opened if opened else '없음'}")
 
 def cmd_run():
+    cleanup_old_update()
     migrate_config()
     cfg = load_json(CONFIG_PATH, None)
     if cfg is None:

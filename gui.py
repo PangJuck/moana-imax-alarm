@@ -29,6 +29,7 @@ class App:
         self.q = queue.Queue()
         self.worker = None
         self.stop_flag = threading.Event()
+        core.cleanup_old_update()  # 이전 업데이트가 남긴 .bak(구버전 exe) 정리
         core.migrate_config()  # 옛 8시간 요약주기를 6시간으로 1회 자동 전환
         self.cfg = core.load_json(core.CONFIG_PATH, dict(core.DEFAULT_CONFIG))
         if "theaters" not in self.cfg or not self.cfg["theaters"]:
