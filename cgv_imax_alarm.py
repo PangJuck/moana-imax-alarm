@@ -20,7 +20,7 @@ TARGETS_PATH = os.path.join(BASE, "targets.json")
 SUBS_PATH = os.path.join(BASE, "subscribers.json")
 STATE_PATH = os.path.join(BASE, "state.json")
 
-VERSION = "v2.2"
+VERSION = "v2.3"
 API = "https://api.cgv.co.kr"
 SECRET = b"ydqXY0ocnFLmJGHr_zNzFcpjwAsXq_8JcBNURAkRscg"
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
@@ -358,7 +358,7 @@ def check_once(theaters, targets, state, baseline):
                             sched = fmt_showtimes(movie_showtimes(site_no, mv["movNo"]))
                             if sched:
                                 msg += sched + "\n"
-                            msg += "👉 https://cgv.co.kr/"
+                            msg += "👉 예매: https://cgv.co.kr/cnm/movieBook/movie"
                             alerts.append(msg)
                             RUNTIME["last_alert"] = {"time": time.time(), "movie": mv["movNm"], "theater": site_nm}
                             log(f"  *** OPEN: {mv['movNm']} @ {site_nm}")
@@ -476,7 +476,7 @@ def check_all_once(theaters, state, baseline):
                 sched = fmt_showtimes(movie_showtimes(site_no, mov_no))
                 if sched:
                     msg += sched + "\n"
-                msg += "👉 https://cgv.co.kr/"
+                msg += "👉 예매: https://cgv.co.kr/cnm/movieBook/movie"
                 alerts.append(msg)
                 RUNTIME["last_alert"] = {"time": time.time(), "movie": mov_nm, "theater": site_nm}
                 log(f"  *** OPEN(전체): {mov_nm} @ {site_nm}")
