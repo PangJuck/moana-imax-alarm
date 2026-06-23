@@ -24,7 +24,7 @@ def _resource(name):
 class App:
     def __init__(self, root):
         self.root = root
-        root.title("CGV IMAX 예매 알리미")
+        root.title(f"CGV IMAX 예매 알리미  {core.VERSION}")
         root.geometry("780x640")
         self.q = queue.Queue()
         self.worker = None
@@ -278,10 +278,10 @@ class App:
         messagebox.showinfo(
             "업데이트 준비 완료",
             f"{ver} 다운로드 완료! ✅\n\n"
-            "[확인]을 누르면 프로그램이 닫힙니다.\n"
-            "몇 초 뒤 새 버전으로 자동으로 다시 열립니다.\n\n"
-            "혹시 30초가 지나도 안 열리면,\n"
-            "바탕화면의 아이콘으로 직접 다시 열어주세요.\n"
+            "[확인]을 누르면 이 프로그램이 닫힙니다.\n"
+            "5초쯤 기다렸다가, 방금 실행했던 것과\n"
+            "똑같은 방법으로 프로그램을 다시 열어주세요.\n\n"
+            "그러면 새 버전으로 실행됩니다.\n"
             "(설정·구독자·감시목록은 그대로 유지됩니다.)")
         self.stop_flag.set()
         os._exit(0)  # 프로세스를 완전히 종료해야 도우미 배치가 exe를 교체할 수 있다
@@ -418,9 +418,8 @@ class App:
                         if messagebox.askyesno("업데이트",
                                                f"새 버전 {ver}이 있습니다. 지금 업데이트할까요?\n\n"
                                                "1) 새 버전을 내려받습니다.\n"
-                                               "2) 프로그램이 자동으로 닫힙니다.\n"
-                                               "3) 잠시 후 새 버전으로 다시 열립니다.\n"
-                                               "(자동으로 안 열리면 바탕화면 아이콘으로 직접 열어주세요.)"):
+                                               "2) 프로그램이 닫힙니다.\n"
+                                               "3) 직접 다시 열면 새 버전으로 실행됩니다."):
                             self._bg(self._do_update_job, ver, url)
                     elif status == "error":
                         messagebox.showerror("업데이트 실패", ver)
