@@ -130,6 +130,8 @@ class App:
         ttk.Label(f4, textvariable=self.status_var).pack(side="left", padx=10)
         self.subs_var = tk.StringVar(value="구독자 0명")
         ttk.Label(f4, textvariable=self.subs_var).pack(side="left", padx=10)
+        self.btn_update = ttk.Button(f4, text="업데이트 확인", command=self._check_update)
+        self.btn_update.pack(side="right", padx=8, pady=6)
 
         f5 = ttk.LabelFrame(self.root, text="로그")
         f5.pack(fill="both", expand=True, **pad)
@@ -245,6 +247,31 @@ class App:
         except Exception as e:
             self.q.put(("log", f"[{time.strftime('%H:%M:%S')}] 상태 조회 실패: {e}"))
         self.q.put(("status", rows))
+
+    def _check_update(self):
+        self.btn_update.config(state="disabled", text="확인 중...")
+        self._bg(self._update_job)
+
+    def _update_job(self):
+        try:
+            ver, url = core.fetch_update(self.cfg)
+            if not ver:
+                self.q.put(("update_result", ("current", None, None)))
+            else:
+                self.q.put(("update_result", ("available", ver, url)))
+        except Exception as e:
+            self.q.put(("update_result", ("error", str(e), None)))
+
+    def _do_update_job(self, ver, url):
+        self.log(f"업데이트 다운로드 중: {ver}...")
+        try:
+            core.apply_update(url)
+            self.log(f"업데이트 완료 ({ver}). 창을 닫고 다시 열어주세요.")
+            self.root.after(0, lambda: messagebox.showinfo(
+                "업데이트 완료", f"{ver} 설치 완료!\n창을 닫고 다시 열면 새 버전이 실행됩니다."))
+        except Exception as e:
+            self.log(f"업데이트 실패: {e}")
+            self.root.after(0, lambda: messagebox.showerror("업데이트 실패", str(e)))
 
     def _autostart(self):
         """토큰이 저장돼 있으면 실행 직후 자동으로 감시 시작(부팅 자동시작 대비)."""
@@ -369,6 +396,17 @@ class App:
                     self._fill_status(val)
                 elif kind == "live_status":
                     self._fill_live(val)
+                elif kind == "update_result":
+                    status, ver, url = val
+                    self.btn_update.config(state="normal", text="업데이트 확인")
+                    if status == "current":
+                        messagebox.showinfo("업데이트", f"이미 최신 버전입니다 ({core.VERSION})")
+                    elif status == "available":
+                        if messagebox.askyesno("업데이트",
+                                               f"새 버전 {ver}이 있습니다.\n지금 업데이트할까요?\n(완료 후 재시작 필요)"):
+                            self._bg(self._do_update_job, ver, url)
+                    elif status == "error":
+                        messagebox.showerror("업데이트 실패", ver)
         except queue.Empty:
             pass
         self.root.after(300, self._drain)

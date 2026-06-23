@@ -20,6 +20,7 @@ TARGETS_PATH = os.path.join(BASE, "targets.json")
 SUBS_PATH = os.path.join(BASE, "subscribers.json")
 STATE_PATH = os.path.join(BASE, "state.json")
 
+VERSION = "v2.2"
 API = "https://api.cgv.co.kr"
 SECRET = b"ydqXY0ocnFLmJGHr_zNzFcpjwAsXq_8JcBNURAkRscg"
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
@@ -129,6 +130,41 @@ def tg_call(token, method, **params):
     r = requests.post(url, json=params, timeout=40)
     return r.json()
 
+# ---------- 자동 업데이트 ----------
+def fetch_update(config):
+    """GitHub Releases에서 최신 버전 확인.
+    반환: (latest_tag, download_url) — 이미 최신이면 (None, None)."""
+    repo = config.get("update_repo", "PangJuck/moana-imax-alarm")
+    resp = requests.get(
+        f"https://api.github.com/repos/{repo}/releases/latest",
+        timeout=10, headers={"Accept": "application/vnd.github+json"},
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    latest = data.get("tag_name", "")
+    if not latest or latest <= VERSION:
+        return None, None
+    for asset in data.get("assets", []):
+        if asset["name"] == "moana_alarm.exe":
+            return latest, asset["browser_download_url"]
+    raise RuntimeError(f"릴리즈 {latest}에 moana_alarm.exe 파일 없음")
+
+def apply_update(url):
+    """새 exe 다운로드 후 현재 exe 교체(PyInstaller onefile은 실행 중 덮어쓰기 가능)."""
+    current = sys.executable
+    tmp = current + ".new"
+    resp = requests.get(url, stream=True, timeout=300)
+    resp.raise_for_status()
+    with open(tmp, "wb") as f:
+        for chunk in resp.iter_content(65536):
+            f.write(chunk)
+    bak = current + ".bak"
+    if os.path.exists(bak):
+        os.remove(bak)
+    os.rename(current, bak)
+    os.rename(tmp, current)
+    os.remove(bak)
+
 def broadcast(token, subs, text):
     dead = []
     for cid in subs:
@@ -151,6 +187,7 @@ HELP = (
     "/add 제목  감시 영화 추가 (예: /add 아바타)\n"
     "/del 제목  감시 영화 제거\n"
     "/stop  알림 구독 해지\n"
+    "/업데이트  최신 버전 확인 및 자동 업데이트\n"
     "/help  도움말"
 )
 
@@ -192,6 +229,22 @@ def handle_update(token, upd, subs, targets):
             tg_call(token, "sendMessage", chat_id=cid, text=f"➖ 제거됨: {arg}")
         else:
             tg_call(token, "sendMessage", chat_id=cid, text=f"목록에 없음: {arg}")
+    elif cmd == "/업데이트":
+        tg_call(token, "sendMessage", chat_id=cid, text=f"🔍 업데이트 확인 중... (현재: {VERSION})")
+        try:
+            cfg = load_json(CONFIG_PATH, DEFAULT_CONFIG)
+            ver, url = fetch_update(cfg)
+            if not ver:
+                tg_call(token, "sendMessage", chat_id=cid,
+                        text=f"✅ 이미 최신 버전입니다 ({VERSION})")
+            else:
+                tg_call(token, "sendMessage", chat_id=cid,
+                        text=f"⬇️ {ver} 다운로드 중... (잠시 기다려주세요)")
+                apply_update(url)
+                tg_call(token, "sendMessage", chat_id=cid,
+                        text=f"✅ {ver} 업데이트 완료!\n창을 닫고 다시 열면 새 버전이 실행됩니다.")
+        except Exception as e:
+            tg_call(token, "sendMessage", chat_id=cid, text=f"❌ 업데이트 실패: {e}")
     elif cmd == "/status":
         now = time.time()
         # 즉석 CGV 조회는 1분에 1회로 제한(과한 호출 방지)
