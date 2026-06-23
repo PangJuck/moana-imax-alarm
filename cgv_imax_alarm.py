@@ -21,7 +21,7 @@ TARGETS_PATH = os.path.join(BASE, "targets.json")
 SUBS_PATH = os.path.join(BASE, "subscribers.json")
 STATE_PATH = os.path.join(BASE, "state.json")
 
-VERSION = "v2.8"
+VERSION = "v2.9"
 API = "https://api.cgv.co.kr"
 SECRET = b"ydqXY0ocnFLmJGHr_zNzFcpjwAsXq_8JcBNURAkRscg"
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
@@ -179,8 +179,8 @@ def apply_update(url):
     # 앱이 종료돼 exe 잠금이 풀릴 때까지 교체를 재시도한다.
     # 실행 중이면 move가 실패(잠김)해 .new가 남고 재시도, 종료되면 move 성공 → 교체 완료.
     # tasklist/파이프 없이 'move 성공 여부'만으로 판정 → 단순하고 견고.
-    # (자동 재실행은 하지 않음 — onefile 압축해제가 백신 스캔과 겹쳐 깨지는 레이스를 피하려고
-    #  사용자가 직접 다시 열도록 한다.)
+    # 교체 직후 바로 실행하면 onefile 압축해제가 백신 스캔과 겹쳐 'Python DLL 로드 실패'가
+    # 날 수 있어, 약 6초 기다렸다가(백신 스캔 종료 후) 새 버전을 자동 실행한다.
     script = (
         "@echo off\r\n"
         f'cd /d "{d}"\r\n'
@@ -189,6 +189,8 @@ def apply_update(url):
         f'move /y "{name}.new" "{name}" >nul 2>nul\r\n'
         f'if exist "{name}.new" goto retry\r\n'
         f'if exist "{name}.bak" del /f /q "{name}.bak" >nul\r\n'
+        "ping -n 7 127.0.0.1 >nul\r\n"
+        f'start "" "{name}"\r\n'
         'del /f /q "%~f0"\r\n'
     )
     with open(bat, "w", encoding="cp949") as f:
@@ -275,8 +277,8 @@ def handle_update(token, upd, subs, targets):
                 apply_update(url)
                 tg_call(token, "sendMessage", chat_id=cid,
                         text=(f"✅ {ver} 다운로드 완료!\n"
-                              "적용을 위해 봇이 종료됩니다.\n"
-                              "PC에서 프로그램을 다시 열면 새 버전으로 실행됩니다."))
+                              "봇이 종료됐다가 약 10초 뒤 새 버전으로 자동 재시작됩니다.\n"
+                              "(혹시 안 돌아오면 PC에서 프로그램을 직접 열어주세요.)"))
                 time.sleep(1)  # 메시지 전송 보장 후 종료 → 도우미 배치가 교체
                 os._exit(0)
         except Exception as e:
