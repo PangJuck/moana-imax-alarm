@@ -277,7 +277,12 @@ class App:
     def _finish_update(self, ver):
         messagebox.showinfo(
             "업데이트 준비 완료",
-            f"{ver} 다운로드 완료!\n\n[확인]을 누르면 앱이 닫히고\n잠시 후 새 버전이 자동으로 실행됩니다.\n(자동으로 안 열리면 직접 다시 열어주세요.)")
+            f"{ver} 다운로드 완료! ✅\n\n"
+            "[확인]을 누르면 프로그램이 닫힙니다.\n"
+            "몇 초 뒤 새 버전으로 자동으로 다시 열립니다.\n\n"
+            "혹시 30초가 지나도 안 열리면,\n"
+            "바탕화면의 아이콘으로 직접 다시 열어주세요.\n"
+            "(설정·구독자·감시목록은 그대로 유지됩니다.)")
         self.stop_flag.set()
         os._exit(0)  # 프로세스를 완전히 종료해야 도우미 배치가 exe를 교체할 수 있다
 
@@ -411,7 +416,11 @@ class App:
                         messagebox.showinfo("업데이트", f"이미 최신 버전입니다 ({core.VERSION})")
                     elif status == "available":
                         if messagebox.askyesno("업데이트",
-                                               f"새 버전 {ver}이 있습니다.\n지금 업데이트할까요?\n(완료 후 재시작 필요)"):
+                                               f"새 버전 {ver}이 있습니다. 지금 업데이트할까요?\n\n"
+                                               "1) 새 버전을 내려받습니다.\n"
+                                               "2) 프로그램이 자동으로 닫힙니다.\n"
+                                               "3) 잠시 후 새 버전으로 다시 열립니다.\n"
+                                               "(자동으로 안 열리면 바탕화면 아이콘으로 직접 열어주세요.)"):
                             self._bg(self._do_update_job, ver, url)
                     elif status == "error":
                         messagebox.showerror("업데이트 실패", ver)

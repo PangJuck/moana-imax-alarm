@@ -21,7 +21,7 @@ TARGETS_PATH = os.path.join(BASE, "targets.json")
 SUBS_PATH = os.path.join(BASE, "subscribers.json")
 STATE_PATH = os.path.join(BASE, "state.json")
 
-VERSION = "v2.6"
+VERSION = "v2.7"
 API = "https://api.cgv.co.kr"
 SECRET = b"ydqXY0ocnFLmJGHr_zNzFcpjwAsXq_8JcBNURAkRscg"
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
@@ -176,16 +176,16 @@ def apply_update(url):
             f.write(chunk)
     d, name = os.path.dirname(exe), os.path.basename(exe)
     bat = os.path.join(d, "_update.bat")
-    # 앱이 완전히 종료될 때까지 기다렸다가(=exe 잠금 해제) 교체하고 새 버전을 실행
+    # 앱이 종료돼 exe 잠금이 풀릴 때까지 교체를 재시도한다.
+    # 실행 중이면 move가 실패(잠김)해 .new가 남고 재시도, 종료되면 move 성공 → 새 버전 실행.
+    # tasklist/파이프 없이 'move 성공 여부'만으로 판정 → 단순하고 견고.
     script = (
         "@echo off\r\n"
         f'cd /d "{d}"\r\n'
-        ":wait\r\n"
+        ":retry\r\n"
         "ping -n 2 127.0.0.1 >nul\r\n"
-        f'tasklist /fi "imagename eq {name}" 2>nul | find /i "{name}" >nul\r\n'
-        "if not errorlevel 1 goto wait\r\n"
-        "ping -n 2 127.0.0.1 >nul\r\n"
-        f'move /y "{name}.new" "{name}" >nul\r\n'
+        f'move /y "{name}.new" "{name}" >nul 2>nul\r\n'
+        f'if exist "{name}.new" goto retry\r\n'
         f'if exist "{name}.bak" del /f /q "{name}.bak" >nul\r\n'
         f'start "" "{name}"\r\n'
         'del /f /q "%~f0"\r\n'
@@ -193,8 +193,8 @@ def apply_update(url):
     with open(bat, "w", encoding="cp949") as f:
         f.write(script)
     import subprocess
-    # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP — 부모(앱)가 꺼져도 배치는 계속 실행
-    subprocess.Popen(["cmd", "/c", bat], creationflags=0x00000208, close_fds=True)
+    # CREATE_NO_WINDOW — 창 없이 숨겨 실행. 부모(앱)가 꺼져도 자식 배치는 계속 동작.
+    subprocess.Popen(["cmd", "/c", bat], creationflags=0x08000000, close_fds=True)
 
 def broadcast(token, subs, text):
     dead = []
